@@ -1,10 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, FormProvider, useFieldArray } from 'react-hook-form';
 
 import { zodResolver } from '@hookform/resolvers/zod';
+import { PlusCircle, XCircle } from 'lucide-react';
 import { z } from 'zod';
+
+import { supabase } from '../../lib/supabase';
+import { Forms } from './components';
 
 import '../../styles/global.css';
 
@@ -14,18 +18,26 @@ import '../../styles/global.css';
 
 /**
  * TO-DO
- * [] Validação / transformação
- * [] Field Arrays
- * [] Upload de arquivos
+ * [x] Validação / transformação
+ * [x] Field Arrays
+ * [x] Upload de arquivos
  * [] Composition pattern
  */
 
-// type FormValues = {
-//   email: string;
-//   password: string;
-// };
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5mb
+const ACCEPTED_IMAGE_TYPES = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+];
 
 const createUserSchema = z.object({
+  avatar: z
+    .instanceof(FileList)
+    .refine((files) => files.length > 0, 'Avatar é obrigatório')
+    .refine((files) => files[0].size < 1000000, 'Tamanho máximo de 1MB')
+    .transform((files) => files[0]),
   name: z
     .string()
     .nonempty('Nome obrigatório')
@@ -54,7 +66,7 @@ const createUserSchema = z.object({
 
 type CreateUserFormData = z.infer<typeof createUserSchema>;
 
-export default function Forms() {
+export default function App() {
   const [output, setOutput] = useState<CreateUserFormData>();
 
   const {
@@ -71,9 +83,15 @@ export default function Forms() {
     name: 'techs',
   });
 
-  function createUserForm(data: CreateUserFormData) {
+  async function createUserForm(data: CreateUserFormData) {
+    await supabase.storage
+      .from('forms-react')
+      .upload(data.avatar.name, data.avatar, {
+        cacheControl: '3600',
+        upsert: false,
+      });
     setOutput(data as CreateUserFormData);
-    console.log(output);
+    console.log(data.avatar);
   }
 
   function addNewTech() {
@@ -87,6 +105,27 @@ export default function Forms() {
         className="w-full max-w-xs bg-white rounded-md shadow-md overflow-hidden gap-4"
       >
         <div className="px-5 py-7">
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="avatar"
+              className="text-sm font-medium text-gray-700"
+            >
+              Avatar
+            </label>
+            <input
+              id="avatar"
+              type="file"
+              accept="image/*"
+              name="avatar"
+              {...register('avatar')}
+              className=" text-slate-700"
+            />
+            {errors.avatar && (
+              <span className="text-red-500 text-xs">
+                {errors.avatar.message}
+              </span>
+            )}
+          </div>
           <div className="flex flex-col gap-1">
             <label htmlFor="name" className="text-sm font-medium text-gray-700">
               Nome
