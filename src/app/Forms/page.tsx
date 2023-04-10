@@ -185,7 +185,7 @@ export default function App() {
             2xl:px-24
             2xl:py-16
 
-            
+
           "
         >
           <Forms.Field>
