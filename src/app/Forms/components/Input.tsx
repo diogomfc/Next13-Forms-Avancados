@@ -10,7 +10,7 @@ export function Input({ name, ...rest }: InputProps) {
   return (
     <div className="flex flex-col gap-1">
       <input
-        className="text-slate-700"
+        className="flex flex-col gap-1 text-sm bg-zinc-800 text-zinc-100 p-2 rounded-lg"
         id={name}
         name={name}
         {...register(name)}

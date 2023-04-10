@@ -33,35 +33,60 @@ const ACCEPTED_IMAGE_TYPES = [
 ];
 
 const createUserSchema = z.object({
-  avatar: z
-    .instanceof(FileList)
-    .refine((files) => files.length > 0, 'Avatar é obrigatório')
-    .refine((files) => files[0].size < 1000000, 'Tamanho máximo de 1MB')
-    .transform((files) => files[0]),
   name: z
     .string()
-    .nonempty('Nome obrigatório')
+    .nonempty({
+      message: 'O nome é obrigatório',
+    })
     .transform((name) => {
       return name
         .trim()
         .split(' ')
-        .map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase())
+        .map((word) => word[0].toLocaleUpperCase().concat(word.substring(1)))
         .join(' ');
     }),
-  email: z.string().email('Email inválido').nonempty('Email obrigatório'),
-  password: z.string().min(6, 'Senha deve ter no mínimo 6 caracteres'),
+  email: z
+    .string()
+    .nonempty({
+      message: 'O e-mail é obrigatório',
+    })
+    .email({
+      message: 'Formato de e-mail inválido',
+    })
+    .toLowerCase(),
+  password: z
+    .string()
+    .nonempty({
+      message: 'A senha é obrigatória',
+    })
+    .min(6, {
+      message: 'A senha precisa ter no mínimo 6 caracteres',
+    }),
   techs: z
     .array(
       z.object({
-        title: z.string().nonempty('title é obrigatório'),
-        level: z.coerce
-          .number()
-          .int()
-          .min(1, 'maior que 0')
-          .max(10, 'menor que 10'),
+        title: z
+          .string()
+          .nonempty({ message: 'O nome da tecnologia é obrigatório' }),
       })
     )
-    .min(1, 'Deve ter no mínimo 1 tech'),
+    .min(3, {
+      message: 'Pelo menos 3 tecnologias devem ser informadas.',
+    }),
+  avatar: z
+    .instanceof(FileList)
+    .refine((files) => !!files.item(0), 'A imagem de perfil é obrigatória')
+    .refine(
+      (files) => files.item(0)?.size <= MAX_FILE_SIZE,
+      `Tamanho máximo de 5MB`
+    )
+    .refine(
+      (files) => ACCEPTED_IMAGE_TYPES.includes(files.item(0)?.type),
+      'Formato de imagem inválido'
+    )
+    .transform((files) => {
+      return files.item(0);
+    }),
 });
 
 type CreateUserFormData = z.infer<typeof createUserSchema>;
@@ -69,205 +94,181 @@ type CreateUserFormData = z.infer<typeof createUserSchema>;
 export default function App() {
   const [output, setOutput] = useState<CreateUserFormData>();
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    control,
-  } = useForm<CreateUserFormData>({
+  const createUserForm = useForm<CreateUserFormData>({
     resolver: zodResolver(createUserSchema),
   });
+
+  async function createUser(data: CreateUserFormData) {
+    const { data: uploadData, error } = await supabase.storage
+      .from('forms-react')
+      .upload(`avatars/${data.avatar?.name}`, data.avatar, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    console.log(uploadData);
+
+    setOutput(
+      data as CreateUserFormData & {
+        avatar: {
+          name: string;
+          size: number;
+          type: string;
+          url: string;
+        };
+      }
+    );
+  }
+
+  const {
+    handleSubmit,
+    formState: { isSubmitting },
+    watch,
+    control,
+  } = createUserForm;
+
+  const userPassword = watch('password');
+  const isPasswordStrong = new RegExp(
+    '(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9])(?=.{8,})'
+  ).test(userPassword);
 
   const { fields, append, remove } = useFieldArray({
     control,
     name: 'techs',
   });
 
-  async function createUserForm(data: CreateUserFormData) {
-    await supabase.storage
-      .from('forms-react')
-      .upload(data.avatar.name, data.avatar, {
-        cacheControl: '3600',
-        upsert: false,
-      });
-    setOutput(data as CreateUserFormData);
-    console.log(data.avatar);
-  }
-
   function addNewTech() {
-    append({ title: '', level: 0 });
+    append({ title: '' });
   }
 
   return (
-    <main className="h-screen bg-zinc-950 flex flex-col items-center justify-center gap-4">
-      <form
-        onSubmit={handleSubmit(createUserForm)}
-        className="w-full max-w-xs bg-white rounded-md shadow-md overflow-hidden gap-4"
-      >
-        <div className="px-5 py-7">
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="avatar"
-              className="text-sm font-medium text-gray-700"
-            >
-              Avatar
-            </label>
-            <input
-              id="avatar"
-              type="file"
-              accept="image/*"
-              name="avatar"
-              {...register('avatar')}
-              className=" text-slate-700"
-            />
-            {errors.avatar && (
-              <span className="text-red-500 text-xs">
-                {errors.avatar.message}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <label htmlFor="name" className="text-sm font-medium text-gray-700">
-              Nome
-            </label>
-            <input
-              id="name"
-              type="text"
-              name="name"
-              placeholder="
-            Enter com seu nome"
-              className="border border-zinc-200 shadow-sm rounded h-10 px-3  bg-zinc-50 text-slate-700"
-              {...register('name')}
-            />
-            {errors.name && (
-              <span className="text-red-500 text-xs">
-                {errors.name.message}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="email"
-              className="text-sm font-medium text-gray-700"
-            >
-              Email address
-            </label>
-            <input
-              id="email"
-              type="email"
-              name="email"
-              placeholder="
-            Enter your email"
-              autoComplete="email"
-              className="border border-zinc-200 shadow-sm rounded h-10 px-3  bg-zinc-50 text-slate-700"
-              {...register('email')}
-            />
-            {errors.email && (
-              <span className="text-red-500 text-xs">
-                {errors.email.message}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="password"
-              className="text-sm font-medium text-gray-700"
-            >
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              name="password"
-              placeholder="Enter your password"
-              autoComplete="current-password"
-              className="border border-zinc-200 shadow-sm rounded h-10 px-3  bg-zinc-50 text-slate-700"
-              {...register('password')}
-            />
-            {errors.password && (
-              <span className="text-red-500 text-xs">
-                {errors.password.message}
-              </span>
-            )}
-          </div>
-          <div className="flex flex-col gap-1 py-5 ">
-            <label
-              htmlFor="techs"
-              className="text-sm font-medium text-gray-700 flex items-center gap-2 justify-between"
-            >
+    <main className="h-screen flex flex-row gap-6 items-center justify-center">
+      <FormProvider {...createUserForm}>
+        <form
+          onSubmit={handleSubmit(createUser)}
+          className="
+            w-full
+            max-w-md
+            bg-white
+            rounded-lg
+            shadow-lg
+
+            px-8
+            pt-6
+            pb-8
+            mb-4
+            flex
+            flex-col
+            gap-4
+
+            dark:bg-gray-950
+            dark:text-gray-100
+
+            sm:max-w-xl
+            sm:shadow-lg
+            sm:px-10
+            sm:py-8
+
+            md:max-w-2xl
+            md:px-12
+            md:py-10
+
+            lg:max-w-4xl
+            lg:px-16
+            lg:py-12
+
+            xl:max-w-5xl
+            xl:px-20
+            xl:py-14
+
+            2xl:max-w-6xl
+            2xl:px-24
+            2xl:py-16
+
+            
+          "
+        >
+          <Forms.Field>
+            <Forms.Label htmlFor="avatar">Avatar</Forms.Label>
+            <Forms.Input type="file" name="avatar" />
+            <Forms.ErrorMessage field="avatar" />
+          </Forms.Field>
+
+          <Forms.Field>
+            <Forms.Label htmlFor="name">Nome</Forms.Label>
+            <Forms.Input type="name" name="name" />
+            <Forms.ErrorMessage field="name" />
+          </Forms.Field>
+
+          <Forms.Field>
+            <Forms.Label htmlFor="email">E-mail</Forms.Label>
+            <Forms.Input type="email" name="email" />
+            <Forms.ErrorMessage field="email" />
+          </Forms.Field>
+
+          <Forms.Field>
+            <Forms.Label htmlFor="password">
+              Senha
+              {isPasswordStrong ? (
+                <span className="text-xs text-emerald-600">Senha forte</span>
+              ) : (
+                <span className="text-xs text-red-500">Senha fraca</span>
+              )}
+            </Forms.Label>
+            <Forms.Input type="password" name="password" />
+            <Forms.ErrorMessage field="password" />
+          </Forms.Field>
+
+          <Forms.Field>
+            <Forms.Label>
               Tecnologias
               <button
                 type="button"
-                onClick={() => addNewTech()}
-                className="text-sm font-medium text-zinc-500"
+                onClick={addNewTech}
+                className="text-emerald-500 font-semibold text-xs flex items-center gap-1"
               >
-                Add
+                Adicionar nova
+                <PlusCircle size={14} />
               </button>
-            </label>
+            </Forms.Label>
+            <Forms.ErrorMessage field="techs" />
 
-            {fields.map((field, index) => (
-              <div key={field.id} className="flex gap-2">
-                <div>
-                  {/* <label
-                  htmlFor={`techs[${index}].title`}
-                  className="text-sm font-medium text-gray-700"
-                >
-                  Tech
-                </label> */}
-                  <input
-                    id={`techs[${index}].title`}
-                    type="text"
-                    name={`techs[${index}].title`}
-                    placeholder="Enter your tech"
-                    className="border border-zinc-200 shadow-sm rounded h-10 px-3  bg-zinc-50 text-slate-700"
-                    {...register(`techs.${index}.title`)}
-                  />
-                  {errors.techs?.[index]?.title && (
-                    <span className="text-red-500 text-xs">
-                      {errors.techs?.[index]?.title.message}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  {/* <label
-                  htmlFor={`techs[${index}].level`}
-                  className="text-sm font-medium text-gray-700"
-                >
-                  Level
-                </label> */}
-                  <input
-                    id={`techs[${index}].level`}
-                    type="number"
-                    name={`techs[${index}].level`}
-                    placeholder="Enter your level"
-                    className="border border-zinc-200 shadow-sm rounded h-10 w-16 px-3 bg-zinc-50 text-slate-700"
-                    {...register(`techs.${index}.level`)}
-                  />
-                  {errors.techs?.[index]?.level && (
-                    <span className="text-red-500 text-xs">
-                      {errors.techs?.[index]?.level.message}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-            {errors.techs && (
-              <span className="text-red-500 text-xs">
-                {errors.techs.message}
-              </span>
-            )}
-          </div>
+            {fields.map((field, index) => {
+              const fieldName = `techs.${index}.title`;
+
+              return (
+                <Forms.Field key={field.id}>
+                  <div className="flex gap-2 items-center">
+                    <Forms.Input type={fieldName} name={fieldName} />
+                    <button
+                      type="button"
+                      onClick={() => remove(index)}
+                      className="text-red-500"
+                    >
+                      <XCircle size={14} />
+                    </button>
+                  </div>
+                  <Forms.ErrorMessage field={fieldName} />
+                </Forms.Field>
+              );
+            })}
+          </Forms.Field>
+
           <button
             type="submit"
-            className="mt-3 w-full bg-indigo-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            disabled={isSubmitting}
+            className="bg-violet-500 text-white rounded px-3 h-10 font-semibold text-sm hover:bg-violet-600"
           >
             Salvar
           </button>
-        </div>
-      </form>
-      <pre>
-        <code>{JSON.stringify(output, null, 2)}</code>
-      </pre>
+        </form>
+      </FormProvider>
+
+      {output && (
+        <pre className="text-sm bg-zinc-800 text-zinc-100 p-6 rounded-lg">
+          {output && JSON.stringify(output, null, 2)}
+        </pre>
+      )}
     </main>
   );
 }
